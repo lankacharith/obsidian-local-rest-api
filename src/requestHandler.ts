@@ -255,10 +255,10 @@ export default class RequestHandler {
       certificateInfo:
         this.requestIsAuthenticated(req) && certificate
           ? {
-              validityDays: getCertificateValidityDays(certificate),
-              regenerateRecommended:
-                !getCertificateIsUptoStandards(certificate),
-            }
+            validityDays: getCertificateValidityDays(certificate),
+            regenerateRecommended:
+              !getCertificateIsUptoStandards(certificate),
+          }
           : undefined,
       apiExtensions: this.requestIsAuthenticated(req)
         ? this.apiExtensions.map(({ manifest }) => manifest)
@@ -1172,6 +1172,37 @@ export default class RequestHandler {
     return;
   }
 
+  async createNote(req: express.Request, res: express.Response): Promise<void> {
+    try {
+      const { title, content, folder } = req.body;
+
+      if (!title) {
+        this.returnCannedResponse(res, {
+          statusCode: 400,
+          message: "Title is required",
+          errorCode: ErrorCode.BadRequest,
+        });
+        return;
+      }
+
+      // Create the file path
+      const filePath = folder ? `${folder}/${title}.md` : `${title}.md`;
+
+      // Create the file
+      const file = await this.app.vault.create(filePath, content || "");
+
+      // Return the created file metadata
+      const metadata = await this.getFileMetadataObject(file);
+      res.status(201).json(metadata);
+    } catch (error) {
+      this.returnCannedResponse(res, {
+        statusCode: 500,
+        message: `Failed to create note: ${error.message}`,
+        errorCode: ErrorCode.InternalServerError,
+      });
+    }
+  }
+
   setupRouter() {
     this.api.use((req, res, next) => {
       const originalSend = res.send;
@@ -1263,5 +1294,8 @@ export default class RequestHandler {
 
     this.api.use(this.notFoundHandler.bind(this));
     this.api.use(this.errorHandler.bind(this));
+
+    // Add the new create note endpoint
+    this.api.post("/notes", this.authenticationMiddleware.bind(this), this.createNote.bind(this));
   }
 }
